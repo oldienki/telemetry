@@ -47,8 +47,8 @@ with TelemetryClient(
     ("192.168.1.10", 9876),
     host_id="bench-01",
     host_class="rig",
-    use_msgpack=True,           # MessagePack wire format
-    heartbeat_timeout=3.0,      # s; None disables the watcher
+    use_msgpack=True,  # MessagePack wire format
+    heartbeat_timeout=3.0,  # s; None disables the watcher
 ) as client:
     client.emit("firmware.flash", {"target": "stm32", "bytes": 65536})
 ```
