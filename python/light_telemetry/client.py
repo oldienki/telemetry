@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any, Self
 
+from . import config as _config
 from .serialize import encode, now_micros
 
 
@@ -66,6 +67,34 @@ class TelemetryClient:
         self._degraded = threading.Event()
         self._watcher = _Watcher()
         self.stats = ClientStats()
+
+    @classmethod
+    def local(
+        cls,
+        host_id: str,
+        host_class: str,
+        *,
+        config_path: str | None = None,
+        use_msgpack: bool = False,
+    ) -> TelemetryClient:
+        """Localhost default: adopt the server's ``telemetry.toml``.
+
+        Reads ``config_path`` or, absent, ``/etc/telemetry.toml`` then
+        ``$HOME/.config/telemetry.toml`` (first hit wins — same as the
+        daemon). ``udp_bind`` becomes the target with wildcards mapped
+        to loopback; ``heartbeat_ms × 3`` becomes the liveness window.
+        Missing files or keys fall back to ``127.0.0.1:9876`` / 3 s.
+        """
+        srv, _ = _config.load(config_path)
+        host, port = _config.localize(srv.get("udp_bind", "0.0.0.0:9876"))
+        hb_ms = srv.get("heartbeat_ms", _config.DEFAULT_HEARTBEAT_MS)
+        return cls(
+            (host, port),
+            host_id,
+            host_class,
+            use_msgpack=use_msgpack,
+            heartbeat_timeout=hb_ms * 3 / 1000.0,
+        )
 
     # -- lifecycle ------------------------------------------------------
 

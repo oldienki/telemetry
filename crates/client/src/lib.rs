@@ -7,6 +7,7 @@
 //!   they stop, `degraded` flips and `emit` drops before serializing.
 //! - Oversized packets are truncated (`payload → {"truncated": true}`).
 
+pub mod config;
 mod heartbeat;
 mod sender;
 pub mod serialize;
@@ -56,6 +57,49 @@ impl TelemetryConfig {
     pub fn with_msgpack(mut self, enabled: bool) -> Self {
         self.use_msgpack = enabled;
         self
+    }
+
+    /// Localhost default: adopt the server's `telemetry.toml`.
+    ///
+    /// Reads `/etc/telemetry.toml` then `$HOME/.config/telemetry.toml`
+    /// (first hit wins, same as the daemon). `udp_bind` becomes the
+    /// target with wildcards mapped to loopback; `heartbeat_ms × 3`
+    /// becomes the liveness window. Missing/unreadable files or keys
+    /// fall back to `127.0.0.1:9876` / 3 s — `local` never fails.
+    pub fn local(host_id: impl Into<String>, host_class: impl Into<String>) -> Self {
+        let (srv, _) = config::load(None).unwrap_or_default();
+        Self::from_server(srv, host_id, host_class)
+    }
+
+    /// Like [`Self::local`] but reads an explicit config file that must
+    /// exist — errors propagate.
+    pub fn local_from(
+        path: &std::path::Path,
+        host_id: impl Into<String>,
+        host_class: impl Into<String>,
+    ) -> std::io::Result<Self> {
+        let (srv, _) = config::load(Some(path))?;
+        Ok(Self::from_server(srv, host_id, host_class))
+    }
+
+    /// Shared merge for `local`/`local_from`.
+    fn from_server(
+        srv: config::ServerConfig,
+        host_id: impl Into<String>,
+        host_class: impl Into<String>,
+    ) -> Self {
+        let addr = srv
+            .udp_bind
+            .map(config::localize)
+            .unwrap_or_else(|| "127.0.0.1:9876".parse().unwrap());
+        let hb_ms = srv.heartbeat_ms.unwrap_or(1000);
+        Self {
+            server_addr: addr,
+            host_id: host_id.into(),
+            host_class: host_class.into(),
+            use_msgpack: false,
+            heartbeat_timeout: Some(Duration::from_millis(hb_ms * 3)),
+        }
     }
 
     /// Override the heartbeat liveness window; `None` disables watching.
@@ -260,5 +304,42 @@ mod tests {
         let client = TelemetryClient::new(test_config(server.local_addr().unwrap())).unwrap();
         std::thread::sleep(Duration::from_millis(300));
         assert!(!client.is_degraded());
+    }
+
+    #[test]
+    fn local_from_uses_server_config() {
+        let p = std::env::temp_dir().join(format!("lt-srv-{}.toml", std::process::id()));
+        std::fs::write(&p, "udp_bind = \"0.0.0.0:45555\"\nheartbeat_ms = 100\n").unwrap();
+        let cfg = TelemetryConfig::local_from(&p, "h", "c").unwrap();
+        assert_eq!(cfg.server_addr, "127.0.0.1:45555".parse().unwrap());
+        assert_eq!(cfg.heartbeat_timeout, Some(Duration::from_millis(300)));
+        std::fs::remove_file(&p).ok();
+    }
+
+    #[test]
+    fn local_falls_back_to_defaults() {
+        // Point HOME at an empty dir so no user config is found; /etc is
+        // not writable here either — expect the built-in defaults.
+        let dir = std::env::temp_dir().join(format!("lt-home-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let prev = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &dir);
+        let cfg = TelemetryConfig::local("h", "c");
+        if let Some(h) = prev {
+            std::env::set_var("HOME", h);
+        }
+        if std::path::Path::new("/etc/telemetry.toml").exists() {
+            return; // cannot assert defaults while a real config exists
+        }
+        assert_eq!(cfg.server_addr, "127.0.0.1:9876".parse().unwrap());
+        assert_eq!(cfg.heartbeat_timeout, Some(Duration::from_secs(3)));
+    }
+
+    #[test]
+    fn local_from_missing_file_errors() {
+        assert!(
+            TelemetryConfig::local_from(std::path::Path::new("/nonexistent/t.toml"), "h", "c")
+                .is_err()
+        );
     }
 }

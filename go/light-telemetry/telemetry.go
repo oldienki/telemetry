@@ -79,6 +79,33 @@ func NewClient(cfg Config) (*Client, error) {
 	return c, nil
 }
 
+// NewLocalClient creates a localhost client that adopts the server's
+// telemetry.toml: it reads explicit path or, absent, /etc/telemetry.toml
+// then $HOME/.config/telemetry.toml (first hit wins — same as the
+// daemon). udp_bind becomes the target with wildcards mapped to
+// loopback; heartbeat_ms × 3 becomes the liveness window. Missing files
+// or keys fall back to 127.0.0.1:9876 / 3 s.
+func NewLocalClient(hostID, hostClass, configPath string) (*Client, error) {
+	srv, _, err := LoadServerConfig(configPath)
+	if err != nil {
+		return nil, err
+	}
+	addr := defaultUDPBind
+	if srv.UDPBind != "" {
+		addr = srv.UDPBind
+	}
+	hb := srv.HeartbeatMs
+	if hb <= 0 {
+		hb = defaultHeartbeatMs
+	}
+	return NewClient(Config{
+		ServerAddr:       localize(addr),
+		HostID:           hostID,
+		HostClass:        hostClass,
+		HeartbeatTimeout: time.Duration(hb*heartbeatMultiplier) * time.Millisecond,
+	})
+}
+
 // Close stops the watcher and closes the socket. Idempotent.
 func (c *Client) Close() error {
 	c.closeOnce.Do(func() {
