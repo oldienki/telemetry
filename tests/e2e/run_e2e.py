@@ -192,6 +192,14 @@ def main() -> int:
         return 2
     print(f"  {SERVER_BIN}")
 
+    if "go" in kinds:
+        # Warm the module/build cache so `go run` doesn't spend the wait
+        # window downloading dependencies on a cold cache.
+        print("== warm go build cache ==")
+        rc, out = run(["go", "build", "./..."], cwd=ROOT / "go" / "light-telemetry")
+        if rc != 0:
+            print(out)
+
     udp_addr = f"127.0.0.1:{free_port()}"
     http_port = free_port()
     http = f"http://127.0.0.1:{http_port}"
