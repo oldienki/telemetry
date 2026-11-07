@@ -1,0 +1,6 @@
+[package]
+name = "light-telemetry-tracing"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

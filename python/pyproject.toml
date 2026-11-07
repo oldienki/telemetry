@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "light-telemetry"
+version = "0.1.0"
+description = "UDP fire-and-forget telemetry client for LightTelemetry"
+requires-python = ">=3.11"
+dependencies = ["msgpack>=1.0"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "jsonschema>=4",
+    "ruff>=0.7",
+    "mypy>=1.11",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["light_telemetry"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true

@@ -1,0 +1,6 @@
+[package]
+name = "light-telemetry-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
