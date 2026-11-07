@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
-SERVER_BIN = ROOT / "target" / "debug" / "light-telemetry-server"
+SERVER_BIN = ROOT / "target" / "debug" / "light-telemetry"
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -186,7 +186,7 @@ def main() -> int:
     kinds = args.only.split(",") if args.only else ["rust", "python", "go"]
 
     print("== build server ==")
-    rc, out = run(["cargo", "build", "-q", "-p", "light-telemetry-server"])
+    rc, out = run(["cargo", "build", "-q", "-p", "light-telemetry"])
     if rc != 0 or not SERVER_BIN.exists():
         print(out)
         return 2

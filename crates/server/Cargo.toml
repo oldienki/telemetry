@@ -1,5 +1,5 @@
 [package]
-name = "light-telemetry-server"
+name = "light-telemetry"
 version.workspace = true
 edition.workspace = true
 

@@ -29,7 +29,7 @@ test-units: test
 
 # Server crate tests (memory/sqlite + env-gated pg).
 test-server:
-    cargo test -p light-telemetry-server --all-features
+    cargo test -p light-telemetry --all-features
 
 # All client tests (Rust, Python, Go).
 test-clients:
@@ -49,8 +49,8 @@ test-e2e *ARGS:
 
 # Run the server with defaults (memory engine).
 run:
-    cargo run -p light-telemetry-server -- --storage memory
+    cargo run -p light-telemetry -- --storage memory
 
 # Run the server against SQLite.
 run-sqlite db="sqlite:telemetry.db":
-    cargo run -p light-telemetry-server -- --storage sqlite --db-url {{db}}
+    cargo run -p light-telemetry -- --storage sqlite --db-url {{db}}

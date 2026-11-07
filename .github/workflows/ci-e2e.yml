@@ -24,7 +24,7 @@ jobs:
           enable-cache: true
 
       - name: build server
-        run: cargo build -p light-telemetry-server
+        run: cargo build -p light-telemetry
 
       - name: run e2e harness
         run: python3 tests/e2e/run_e2e.py

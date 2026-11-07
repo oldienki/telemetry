@@ -1,4 +1,4 @@
-//! light-telemetry-server: UDP telemetry ingest daemon for test environments.
+//! light-telemetry: UDP telemetry ingest daemon for test environments.
 
 mod api;
 mod bus;
@@ -19,7 +19,7 @@ use std::time::Duration;
 /// CLI configuration for the daemon.
 #[derive(Debug, Parser)]
 #[command(
-    name = "light-telemetry-server",
+    name = "light-telemetry",
     about = "LightTelemetry ingest daemon"
 )]
 struct Cli {
