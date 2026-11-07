@@ -15,5 +15,5 @@ if [[ "${1:-}" == "--check-only" ]]; then
 fi
 
 echo "== uv publish =="
-uv publish
+git-uv-publish
 echo "done"
