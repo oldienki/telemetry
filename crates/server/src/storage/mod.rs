@@ -1,6 +1,8 @@
 //! Storage layer: `StorageEngine` trait, query filter, bus→storage pipeline.
 
 pub mod memory;
+pub mod retention;
+pub mod sqlite;
 
 use crate::bus::EventBus;
 use crate::event::TelemetryEvent;

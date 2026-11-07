@@ -53,12 +53,17 @@ struct Cli {
     /// Retention TTL in milliseconds; 0 disables periodic cleanup.
     #[arg(long, default_value_t = 0)]
     retention_ttl_ms: u64,
+
+    /// Database URL for durable backends (`sqlite:path.db`).
+    #[arg(long)]
+    db_url: Option<String>,
 }
 
 /// Selectable storage backends.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum StorageKind {
     Memory,
+    Sqlite,
 }
 
 #[tokio::main]
@@ -80,26 +85,21 @@ async fn main() -> anyhow::Result<()> {
 
     let engine: Arc<dyn storage::StorageEngine> = match cli.storage {
         StorageKind::Memory => Arc::new(storage::memory::MemoryEngine::new(cli.memory_capacity)),
+        StorageKind::Sqlite => {
+            let url = cli
+                .db_url
+                .clone()
+                .unwrap_or_else(|| "sqlite:telemetry.db".to_string());
+            Arc::new(storage::sqlite::SqliteEngine::connect(&url).await?)
+        }
     };
     storage::spawn_pipeline(&bus, Arc::clone(&engine));
 
     if cli.retention_ttl_ms > 0 {
-        let engine = Arc::clone(&engine);
-        let ttl_micros = cli.retention_ttl_ms.saturating_mul(1000);
-        tokio::spawn(async move {
-            let period =
-                Duration::from_millis(cli.retention_ttl_ms / 2).max(Duration::from_secs(1));
-            let mut tick = tokio::time::interval(period);
-            loop {
-                tick.tick().await;
-                let cutoff = event::now_micros().saturating_sub(ttl_micros);
-                match engine.cleanup(cutoff).await {
-                    Ok(n) if n > 0 => tracing::debug!(removed = n, "retention cleanup"),
-                    Err(e) => tracing::warn!(error = %e, "retention cleanup failed"),
-                    _ => {}
-                }
-            }
-        });
+        storage::retention::spawn(
+            Arc::clone(&engine),
+            Duration::from_millis(cli.retention_ttl_ms),
+        );
     }
 
     let dispatch = api::wait::WaitDispatcher::spawn(&bus);
