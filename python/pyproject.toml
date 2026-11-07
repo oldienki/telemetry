@@ -6,8 +6,24 @@ build-backend = "hatchling.build"
 name = "light-telemetry"
 version = "0.1.0"
 description = "UDP fire-and-forget telemetry client for LightTelemetry"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
 requires-python = ">=3.11"
+keywords = ["telemetry", "observability", "udp", "testing", "embedded"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Logging",
+    "Topic :: System :: Monitoring",
+]
 dependencies = ["msgpack>=1.0"]
+
+[project.urls]
+Repository = "https://github.com/oldienki/telemetry"
 
 [dependency-groups]
 dev = [
