@@ -39,25 +39,27 @@ flowchart LR
 Create a polyglot monorepo at the repository root. The remote identity is `github.com/oldienki/telemetry`.
 
 ```text
-Cargo.toml                    # Cargo workspace: server + Rust clients
+Cargo.toml                    # Cargo workspace: crates/*
 Cargo.lock
 Justfile                      # Unified task runner
 spec/                         # Cross-language contract (single source of truth)
 ├── schemas/packet.schema.json
 ├── schemas/heartbeat.schema.json
 └── test-vectors/             # Golden JSON and MessagePack files
-server/                       # light-telemetry-server crate
-clients/
-├── rust/client/              # light-telemetry-client crate
-├── rust/tracing-subscriber/  # TelemetryLayer crate
-└── python/                   # light_telemetry package (uv + hatchling)
-light-telemetry/              # Go client module
-                              # github.com/oldienki/telemetry/light-telemetry
+crates/
+├── server/                   # light-telemetry-server crate
+├── client/                   # light-telemetry-client crate
+└── tracing-subscriber/       # TelemetryLayer crate
+python/                       # Python project (uv + hatchling)
+├── pyproject.toml
+└── light_telemetry/          # light_telemetry package
+go/light-telemetry/           # Go client module
+                              # github.com/oldienki/telemetry/go/light-telemetry
 tests/e2e/                    # Cross-language orchestration
 .github/workflows/            # ci-server.yml, ci-clients.yml, ci-e2e.yml
 ```
 
-The Go client lives at top level in `light-telemetry/`. The Go toolchain requires the module path to match the repository subdirectory. The Rust and Python clients stay under `clients/` because their package managers have no such constraint.
+All Rust crates live under `crates/` as workspace members. The Python project lives under `python/` with the `light_telemetry` package inside. The Go client lives under `go/light-telemetry/`. The Go toolchain requires the module path to match the repository subdirectory, so the module is `github.com/oldienki/telemetry/go/light-telemetry`.
 
 `[workspace.dependencies]` in the root `Cargo.toml` is the single version source for all Rust crates.
 
@@ -142,7 +144,7 @@ flowchart TB
 - **TCP or gRPC ingestion:** Rejected. Connection state raises client cost and defeats fire-and-forget.
 - **Kafka/Redis as the bus:** Rejected. External brokers add deployment weight for a test-scoped tool.
 - **Poll-only query API:** Rejected. Polling reintroduces the assertion races the wait endpoint removes.
-- **Go client under `clients/go/`:** Rejected. The Go module path must equal the repository subdirectory; the chosen path is `github.com/oldienki/telemetry/light-telemetry`.
+- **Go client under `clients/go/` or top-level `light-telemetry/`:** Rejected. The Go module path must equal the repository subdirectory; the chosen path is `github.com/oldienki/telemetry/go/light-telemetry`.
 - **Single storage engine (memory only):** Rejected. SQLite and PostgreSQL serve persistent and distributed test runs.
 
 ## 6. Implementation Plan
@@ -158,38 +160,38 @@ Each phase executes under the Planning and Execution Workflow in [WORKFLOW.md](a
 ### Phase 2 — Server core ingest
 
 - **Goal:** Receive, decode, and fan out UDP datagrams with session tracking.
-- **Files to touch:** `server/Cargo.toml`, `server/src/main.rs`, `server/src/ingest.rs`, `server/src/event.rs`, `server/src/session.rs`, `server/src/bus.rs`.
+- **Files to touch:** `crates/server/Cargo.toml`, `crates/server/src/main.rs`, `crates/server/src/ingest.rs`, `crates/server/src/event.rs`, `crates/server/src/session.rs`, `crates/server/src/bus.rs`.
 - **Approach:** Define `TelemetryEvent`. Bind the `SO_REUSEPORT` socket pool. Decode by first byte into a bounded `mpsc`. Maintain the `DashMap` session registry and heartbeat task. Publish events on the broadcast bus.
 
 ### Phase 3 — Memory engine and query APIs
 
 - **Goal:** Store events in the ring buffer and serve `GET /time`, `GET /events`, `POST /wait`.
-- **Files to touch:** `server/src/storage/mod.rs`, `server/src/storage/memory.rs`, `server/src/api/rest.rs`, `server/src/api/wait.rs`.
+- **Files to touch:** `crates/server/src/storage/mod.rs`, `crates/server/src/storage/memory.rs`, `crates/server/src/api/rest.rs`, `crates/server/src/api/wait.rs`.
 - **Approach:** Implement `StorageEngine` for the `RwLock<VecDeque>` ring buffer. Build the axum router. Implement predicate matching with `oneshot` resolution and `ingress_ts` filtering.
 
 ### Phase 4 — Persistent storage engines
 
 - **Goal:** Add SQLite (WAL) and PostgreSQL (JSONB + GIN) engines behind `StorageEngine`.
-- **Files to touch:** `server/src/storage/sqlite.rs`, `server/src/storage/postgres.rs`, `server/src/storage/retention.rs`, `server/Cargo.toml`.
+- **Files to touch:** `crates/server/src/storage/sqlite.rs`, `crates/server/src/storage/postgres.rs`, `crates/server/src/storage/retention.rs`, `crates/server/Cargo.toml`.
 - **Approach:** Use `sqlx` for both engines. Add the `cleanup` retention task. Select the engine via CLI flag or config.
 
 ### Phase 5 — Client libraries
 
 - **Goal:** Ship the three client libraries with logging-facade integration.
-- **Files to touch:** `clients/rust/client/`, `clients/rust/tracing-subscriber/`, `clients/python/`, `light-telemetry/` (go.mod + client + slog handler).
+- **Files to touch:** `crates/client/`, `crates/tracing-subscriber/`, `python/` (pyproject.toml + `light_telemetry` package), `go/light-telemetry/` (go.mod + client + slog handler).
 - **Approach:** Implement UDP sender plus heartbeat watcher per client. Add MTU truncation logic and degraded-drop fast path. Wire each logging facade. Validate against `spec/` vectors in each language's tests.
 
 ### Phase 6 — Streaming and Grafana
 
 - **Goal:** Add WebSocket streaming and Grafana datasource endpoints.
-- **Files to touch:** `server/src/api/ws.rs`, `server/src/api/grafana.rs`.
+- **Files to touch:** `crates/server/src/api/ws.rs`, `crates/server/src/api/grafana.rs`.
 - **Approach:** Subscribe a WebSocket connection to the broadcast bus with `Lagged` handling. Map `/grafana/search` and `/grafana/query` onto `StorageEngine::query`.
 
 ### Phase 7 — E2E and CI
 
 - **Goal:** Prove the system end to end and gate changes in CI.
 - **Files to touch:** `tests/e2e/docker-compose.yml`, `tests/e2e/run_e2e.py`, `.github/workflows/ci-server.yml`, `ci-clients.yml`, `ci-e2e.yml`.
-- **Approach:** Boot the server, run all three clients, assert events through the wait API. Gate client workflows on `clients/**`, `light-telemetry/**`, and `spec/**` path filters.
+- **Approach:** Boot the server, run all three clients, assert events through the wait API. Gate client workflows on `crates/client/**`, `crates/tracing-subscriber/**`, `python/**`, `go/**`, and `spec/**` path filters.
 
 ## 7. Testing Strategy
 
