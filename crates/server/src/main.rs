@@ -9,6 +9,7 @@ mod metrics;
 mod session;
 mod storage;
 
+use anyhow::Context;
 use clap::{Parser, ValueEnum};
 use session::SessionRegistry;
 use std::net::SocketAddr;
@@ -64,6 +65,7 @@ struct Cli {
 enum StorageKind {
     Memory,
     Sqlite,
+    Postgres,
 }
 
 #[tokio::main]
@@ -91,6 +93,13 @@ async fn main() -> anyhow::Result<()> {
                 .clone()
                 .unwrap_or_else(|| "sqlite:telemetry.db".to_string());
             Arc::new(storage::sqlite::SqliteEngine::connect(&url).await?)
+        }
+        StorageKind::Postgres => {
+            let url = cli
+                .db_url
+                .clone()
+                .context("--db-url is required for postgres storage")?;
+            Arc::new(storage::postgres::PgEngine::connect(&url).await?)
         }
     };
     storage::spawn_pipeline(&bus, Arc::clone(&engine));
