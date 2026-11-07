@@ -1,13 +1,15 @@
 //! light-telemetry-server: UDP telemetry ingest daemon for test environments.
 
+mod api;
 mod bus;
 mod decode;
 mod event;
 mod ingest;
 mod metrics;
 mod session;
+mod storage;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use session::SessionRegistry;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -35,6 +37,28 @@ struct Cli {
     /// Session time-to-live in milliseconds.
     #[arg(long, default_value_t = 5000)]
     session_ttl_ms: u64,
+
+    /// Address the HTTP API binds.
+    #[arg(long, default_value = "0.0.0.0:8080")]
+    http_bind: SocketAddr,
+
+    /// Storage engine backend.
+    #[arg(long, value_enum, default_value_t = StorageKind::Memory)]
+    storage: StorageKind,
+
+    /// Capacity of the in-memory ring buffer.
+    #[arg(long, default_value_t = storage::memory::DEFAULT_CAPACITY)]
+    memory_capacity: usize,
+
+    /// Retention TTL in milliseconds; 0 disables periodic cleanup.
+    #[arg(long, default_value_t = 0)]
+    retention_ttl_ms: u64,
+}
+
+/// Selectable storage backends.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum StorageKind {
+    Memory,
 }
 
 #[tokio::main]
@@ -53,6 +77,36 @@ async fn main() -> anyhow::Result<()> {
 
     let sessions = Arc::new(SessionRegistry::new());
     let bus = bus::EventBus::new();
+
+    let engine: Arc<dyn storage::StorageEngine> = match cli.storage {
+        StorageKind::Memory => Arc::new(storage::memory::MemoryEngine::new(cli.memory_capacity)),
+    };
+    storage::spawn_pipeline(&bus, Arc::clone(&engine));
+
+    if cli.retention_ttl_ms > 0 {
+        let engine = Arc::clone(&engine);
+        let ttl_micros = cli.retention_ttl_ms.saturating_mul(1000);
+        tokio::spawn(async move {
+            let period =
+                Duration::from_millis(cli.retention_ttl_ms / 2).max(Duration::from_secs(1));
+            let mut tick = tokio::time::interval(period);
+            loop {
+                tick.tick().await;
+                let cutoff = event::now_micros().saturating_sub(ttl_micros);
+                match engine.cleanup(cutoff).await {
+                    Ok(n) if n > 0 => tracing::debug!(removed = n, "retention cleanup"),
+                    Err(e) => tracing::warn!(error = %e, "retention cleanup failed"),
+                    _ => {}
+                }
+            }
+        });
+    }
+
+    let dispatch = api::wait::WaitDispatcher::spawn(&bus);
+    let state = Arc::new(api::AppState {
+        storage: engine,
+        dispatch,
+    });
 
     let ing = ingest::spawn(cli.udp_bind, workers, Arc::clone(&sessions), bus.clone()).await?;
     tracing::info!(addr = %ing.local_addr, workers, "udp ingest listening");
@@ -81,6 +135,15 @@ async fn main() -> anyhow::Result<()> {
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             }
+        }
+    });
+
+    // HTTP API.
+    let listener = tokio::net::TcpListener::bind(cli.http_bind).await?;
+    tracing::info!(addr = %cli.http_bind, "http api listening");
+    tokio::spawn(async move {
+        if let Err(e) = axum::serve(listener, api::router(state)).await {
+            tracing::error!(error = %e, "http server failed");
         }
     });
 
