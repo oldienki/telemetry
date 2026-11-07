@@ -162,4 +162,4 @@ just publish-go push                     # tag + push (Go releases = git tags)
 
 ## License
 
-MIT OR Apache-2.0
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
