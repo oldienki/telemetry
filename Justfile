@@ -66,3 +66,7 @@ publish-rust *ARGS:
 # Build and publish the Python package to PyPI.
 publish-python *ARGS:
     bash scripts/publish_python.sh {{ARGS}}
+
+# Tag (and optionally push) the Go module — Go versions via git tags.
+publish-go *ARGS:
+    bash scripts/publish_go.sh {{ARGS}}

@@ -9,8 +9,9 @@ Keeps every package in lockstep:
 Usage:
     scripts/version_bump.py patch|minor|major|X.Y.Z [--commit] [--tag] [--dry-run]
 
---commit creates `Bump version to X.Y.Z`; --tag adds `vX.Y.Z` (implies
---commit when no commit exists for the bump). Stdlib only.
+--commit creates `Bump version to X.Y.Z`; --tag adds `vX.Y.Z` plus the
+Go submodule tag `go/light-telemetry/vX.Y.Z` (Go versions modules via
+tags, not manifests — the subdirectory prefix is required). Stdlib only.
 """
 
 from __future__ import annotations
@@ -85,7 +86,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("version", help="patch|minor|major or explicit X.Y.Z")
     ap.add_argument("--commit", action="store_true")
-    ap.add_argument("--tag", action="store_true", help="create vX.Y.Z tag")
+    ap.add_argument(
+        "--tag",
+        action="store_true",
+        help="create vX.Y.Z plus go/light-telemetry/vX.Y.Z",
+    )
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -111,8 +116,9 @@ def main() -> int:
             ["git", "commit", "-m", f"Bump version to {new}"], cwd=ROOT, check=True
         )
     if args.tag:
-        subprocess.run(["git", "tag", f"v{new}"], cwd=ROOT, check=True)
-        print(f"tagged v{new}")
+        for tag in (f"v{new}", f"go/light-telemetry/v{new}"):
+            subprocess.run(["git", "tag", "-a", tag, "-m", tag], cwd=ROOT, check=True)
+            print(f"tagged {tag}")
 
     print("done")
     return 0
