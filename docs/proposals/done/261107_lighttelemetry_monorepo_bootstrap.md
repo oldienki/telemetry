@@ -5,8 +5,8 @@
 
 - **Author:** Alexey Sudachen
 - **Created:** 2026-11-07
-- **Status:** created
-- **Implemented:** —
+- **Status:** implemented
+- **Implemented:** 2026-11-07
 
 ## 1. Summary
 
