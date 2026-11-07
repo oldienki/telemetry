@@ -1,0 +1,69 @@
+name: ci-clients
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "crates/client/**"
+      - "crates/tracing-subscriber/**"
+      - "python/**"
+      - "go/**"
+      - "spec/**"
+      - ".github/workflows/ci-clients.yml"
+  pull_request:
+    paths:
+      - "crates/client/**"
+      - "crates/tracing-subscriber/**"
+      - "python/**"
+      - "go/**"
+      - "spec/**"
+      - ".github/workflows/ci-clients.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust-clients:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo test -p light-telemetry-client -p light-telemetry-tracing
+      - run: >-
+          cargo clippy -p light-telemetry-client -p light-telemetry-tracing
+          --all-features --all-targets -- -D warnings
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv run pytest
+        working-directory: python
+      - run: uv run ruff check .
+        working-directory: python
+      - run: uv run ruff format --check .
+        working-directory: python
+      - run: uv run mypy light_telemetry
+        working-directory: python
+
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/light-telemetry/go.mod
+          cache-dependency-path: go/light-telemetry/go.sum
+      - run: test -z "$(gofmt -l .)"
+        working-directory: go/light-telemetry
+      - run: go vet ./...
+        working-directory: go/light-telemetry
+      - run: go test ./...
+        working-directory: go/light-telemetry

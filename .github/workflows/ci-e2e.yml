@@ -1,0 +1,30 @@
+name: ci-e2e
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/light-telemetry/go.mod
+          cache-dependency-path: go/light-telemetry/go.sum
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: build server
+        run: cargo build -p light-telemetry-server
+
+      - name: run e2e harness
+        run: python3 tests/e2e/run_e2e.py

@@ -1,0 +1,60 @@
+name: ci-server
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "crates/server/**"
+      - "crates/client/**"
+      - "crates/tracing-subscriber/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "spec/**"
+      - ".github/workflows/ci-server.yml"
+  pull_request:
+    paths:
+      - "crates/server/**"
+      - "crates/client/**"
+      - "crates/tracing-subscriber/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "spec/**"
+      - ".github/workflows/ci-server.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: telemetry
+          POSTGRES_PASSWORD: telemetry
+          POSTGRES_DB: telemetry
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U telemetry"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+
+      - name: fmt
+        run: cargo fmt --all -- --check
+
+      - name: test server
+        run: cargo test -p light-telemetry-server --all-features
+        env:
+          TELEMETRY_TEST_PG_URL: postgres://telemetry:telemetry@127.0.0.1:5432/telemetry
+
+      - name: clippy
+        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+
+      - name: workspace check
+        run: cargo check --workspace --all-features
