@@ -10,7 +10,7 @@
 
 ## 1. Summary
 
-This proposal creates LightTelemetry as a greenfield polyglot monorepo in this repository. A Rust daemon receives telemetry datagrams over UDP from services under test. The daemon decodes each datagram, fans it out over a broadcast bus, and persists it in one of three pluggable storage engines. Client libraries for Rust, Python, and Go attach to each language's native logging facade. Test runners query events through REST endpoints or block on a reactive wait endpoint until a matching event arrives. Grafana reads events directly through a datasource adapter. The full design intent lives in [sketch.md](sketch.md).
+This proposal creates LightTelemetry as a greenfield polyglot monorepo in this repository. A Rust daemon receives telemetry datagrams over UDP from services under test. The daemon decodes each datagram, fans it out over a broadcast bus, and persists it in one of three pluggable storage engines. Client libraries for Rust, Python, and Go attach to each language's native logging facade. Test runners query events through REST endpoints or block on a reactive wait endpoint until a matching event arrives. Grafana reads events directly through a datasource adapter. The full design intent lives in [sketch.md](/docs/sketch.md).
 
 ## 2. Motivation
 
@@ -24,7 +24,7 @@ LightTelemetry removes these costs. UDP fire-and-forget keeps client overhead ne
 
 ## 3. Current Architecture
 
-The repository contains no code. It holds the agent workflow documents under `agentic/` and the design sketch at [sketch.md](sketch.md). This proposal defines the first architecture of the repository. All components below are new.
+The repository contains no code. It holds the agent workflow documents under `agentic/` and the design sketch at [sketch.md](/docs/sketch.md). This proposal defines the first architecture of the repository. All components below are new.
 
 ```mermaid
 flowchart LR
