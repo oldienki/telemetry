@@ -115,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
     let state = Arc::new(api::AppState {
         storage: engine,
         dispatch,
+        bus: bus.clone(),
     });
 
     let ing = ingest::spawn(cli.udp_bind, workers, Arc::clone(&sessions), bus.clone()).await?;

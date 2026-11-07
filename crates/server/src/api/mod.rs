@@ -1,8 +1,12 @@
-//! HTTP API surface: REST query endpoints plus the reactive wait endpoint.
+//! HTTP API surface: REST query endpoints, the reactive wait endpoint,
+//! the WebSocket stream, and the Grafana adapter.
 
+pub mod grafana;
 pub mod rest;
 pub mod wait;
+pub mod ws;
 
+use crate::bus::EventBus;
 use crate::storage::StorageEngine;
 use axum::routing::{get, post};
 use axum::Router;
@@ -15,14 +19,21 @@ pub struct AppState {
     pub storage: Arc<dyn StorageEngine>,
     /// Registry of pending wait predicates.
     pub dispatch: WaitDispatcher,
+    /// Event bus (WS stream subscribes, WS ingest publishes).
+    pub bus: EventBus,
 }
 
-/// Build the `/api/v1` router.
+/// Build the HTTP router.
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/api/v1/time", get(rest::get_time))
         .route("/api/v1/events", get(rest::get_events))
         .route("/api/v1/wait", post(wait::post_wait))
+        .route("/api/v1/stream", get(ws::get_stream))
+        .route("/grafana", get(grafana::get_root))
+        .route("/grafana/", get(grafana::get_root))
+        .route("/grafana/search", post(grafana::post_search))
+        .route("/grafana/query", post(grafana::post_query))
         .with_state(state)
 }
 
@@ -62,6 +73,7 @@ pub(crate) mod tests {
         let state = Arc::new(AppState {
             storage: engine,
             dispatch,
+            bus: bus.clone(),
         });
         (bus, router(state))
     }

@@ -9,6 +9,7 @@ async-trait.workspace = true
 axum.workspace = true
 clap.workspace = true
 dashmap.workspace = true
+futures-util.workspace = true
 rmp-serde.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -16,9 +17,11 @@ socket2.workspace = true
 sqlx.workspace = true
 parking_lot.workspace = true
 thiserror.workspace = true
+time.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+tokio-tungstenite = "0.26"
 tower = { version = "0.5", features = ["util"] }
