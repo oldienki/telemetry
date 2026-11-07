@@ -54,3 +54,15 @@ run:
 # Run the server against SQLite.
 run-sqlite db="sqlite:telemetry.db":
     cargo run -p light-telemetry -- --storage sqlite --db-url {{db}}
+
+# Bump the unified version (patch|minor|major|X.Y.Z) across all manifests.
+version-bump part="patch" *ARGS:
+    python3 scripts/version_bump.py {{part}} {{ARGS}}
+
+# Publish Rust crates to crates.io (dependency order).
+publish-rust *ARGS:
+    bash scripts/publish_rust.sh {{ARGS}}
+
+# Build and publish the Python package to PyPI.
+publish-python *ARGS:
+    bash scripts/publish_python.sh {{ARGS}}

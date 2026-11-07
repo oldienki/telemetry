@@ -2,6 +2,9 @@
 name = "light-telemetry-tracing"
 version.workspace = true
 edition.workspace = true
+description = "tracing layer emitting LightTelemetry UDP events"
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 light-telemetry-client.workspace = true

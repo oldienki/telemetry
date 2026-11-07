@@ -2,6 +2,9 @@
 name = "light-telemetry-client"
 version.workspace = true
 edition.workspace = true
+description = "LightTelemetry UDP fire-and-forget client"
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rmp-serde.workspace = true

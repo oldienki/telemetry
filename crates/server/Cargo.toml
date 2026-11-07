@@ -2,6 +2,9 @@
 name = "light-telemetry"
 version.workspace = true
 edition.workspace = true
+description = "LightTelemetry ingest daemon"
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true

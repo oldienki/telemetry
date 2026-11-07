@@ -5,6 +5,9 @@ members = ["crates/server", "crates/client", "crates/tracing-subscriber"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+description = "LightTelemetry: UDP fire-and-forget telemetry for test environments"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/oldienki/telemetry"
 
 [workspace.dependencies]
 anyhow = "1"
@@ -13,7 +16,7 @@ axum = { version = "0.8", features = ["json", "ws"] }
 clap = { version = "4", features = ["derive"] }
 dashmap = "6"
 futures-util = "0.3"
-light-telemetry-client = { path = "crates/client" }
+light-telemetry-client = { path = "crates/client", version = "0.1" }
 parking_lot = "0.12"
 rmp-serde = "1"
 serde = { version = "1", features = ["derive"] }
