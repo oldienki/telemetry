@@ -2,6 +2,7 @@
 
 mod api;
 mod bus;
+mod config;
 mod decode;
 mod event;
 mod ingest;
@@ -18,42 +19,44 @@ use std::time::Duration;
 
 /// CLI configuration for the daemon.
 #[derive(Debug, Parser)]
-#[command(
-    name = "light-telemetry",
-    about = "LightTelemetry ingest daemon"
-)]
+#[command(name = "light-telemetry", about = "LightTelemetry ingest daemon")]
 struct Cli {
+    /// Config file path; else /etc/telemetry.toml then
+    /// $HOME/.config/telemetry.toml are tried in order.
+    #[arg(long)]
+    config: Option<std::path::PathBuf>,
+
     /// Address the UDP ingest pool binds.
-    #[arg(long, default_value = "0.0.0.0:9876")]
-    udp_bind: SocketAddr,
+    #[arg(long)]
+    udp_bind: Option<SocketAddr>,
 
     /// Number of SO_REUSEPORT ingest sockets.
     #[arg(long)]
     udp_workers: Option<usize>,
 
     /// Heartbeat broadcast interval in milliseconds.
-    #[arg(long, default_value_t = 1000)]
-    heartbeat_ms: u64,
+    #[arg(long)]
+    heartbeat_ms: Option<u64>,
 
     /// Session time-to-live in milliseconds.
-    #[arg(long, default_value_t = 5000)]
-    session_ttl_ms: u64,
+    #[arg(long)]
+    session_ttl_ms: Option<u64>,
 
     /// Address the HTTP API binds.
-    #[arg(long, default_value = "0.0.0.0:8080")]
-    http_bind: SocketAddr,
+    #[arg(long)]
+    http_bind: Option<SocketAddr>,
 
     /// Storage engine backend.
-    #[arg(long, value_enum, default_value_t = StorageKind::Memory)]
-    storage: StorageKind,
+    #[arg(long, value_enum)]
+    storage: Option<StorageKind>,
 
     /// Capacity of the in-memory ring buffer.
-    #[arg(long, default_value_t = storage::memory::DEFAULT_CAPACITY)]
-    memory_capacity: usize,
+    #[arg(long)]
+    memory_capacity: Option<usize>,
 
     /// Retention TTL in milliseconds; 0 disables periodic cleanup.
-    #[arg(long, default_value_t = 0)]
-    retention_ttl_ms: u64,
+    #[arg(long)]
+    retention_ttl_ms: Option<u64>,
 
     /// Database URL for durable backends (`sqlite:path.db`).
     #[arg(long)]
@@ -62,7 +65,7 @@ struct Cli {
 
 /// Selectable storage backends.
 #[derive(Debug, Clone, Copy, ValueEnum)]
-enum StorageKind {
+pub enum StorageKind {
     Memory,
     Sqlite,
     Postgres,
@@ -78,36 +81,40 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
-    let workers = cli
+    let cfg = config::resolve(&cli)?;
+    if let Some(p) = &cfg.config_file {
+        tracing::info!(path = %p.display(), "loaded config file");
+    }
+    let workers = cfg
         .udp_workers
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()));
 
     let sessions = Arc::new(SessionRegistry::new());
     let bus = bus::EventBus::new();
 
-    let engine: Arc<dyn storage::StorageEngine> = match cli.storage {
-        StorageKind::Memory => Arc::new(storage::memory::MemoryEngine::new(cli.memory_capacity)),
+    let engine: Arc<dyn storage::StorageEngine> = match cfg.storage {
+        StorageKind::Memory => Arc::new(storage::memory::MemoryEngine::new(cfg.memory_capacity)),
         StorageKind::Sqlite => {
-            let url = cli
+            let url = cfg
                 .db_url
                 .clone()
                 .unwrap_or_else(|| "sqlite:telemetry.db".to_string());
             Arc::new(storage::sqlite::SqliteEngine::connect(&url).await?)
         }
         StorageKind::Postgres => {
-            let url = cli
+            let url = cfg
                 .db_url
                 .clone()
-                .context("--db-url is required for postgres storage")?;
+                .context("db_url is required for postgres storage")?;
             Arc::new(storage::postgres::PgEngine::connect(&url).await?)
         }
     };
     storage::spawn_pipeline(&bus, Arc::clone(&engine));
 
-    if cli.retention_ttl_ms > 0 {
+    if cfg.retention_ttl_ms > 0 {
         storage::retention::spawn(
             Arc::clone(&engine),
-            Duration::from_millis(cli.retention_ttl_ms),
+            Duration::from_millis(cfg.retention_ttl_ms),
         );
     }
 
@@ -118,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
         bus: bus.clone(),
     });
 
-    let ing = ingest::spawn(cli.udp_bind, workers, Arc::clone(&sessions), bus.clone()).await?;
+    let ing = ingest::spawn(cfg.udp_bind, workers, Arc::clone(&sessions), bus.clone()).await?;
     tracing::info!(addr = %ing.local_addr, workers, "udp ingest listening");
 
     let hb_socket = Arc::clone(&ing.sockets[0]);
@@ -126,12 +133,12 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(ingest::heartbeat_loop(
         hb_socket,
         hb_sessions,
-        Duration::from_millis(cli.heartbeat_ms),
+        Duration::from_millis(cfg.heartbeat_ms),
     ));
     tokio::spawn(ingest::sweeper_loop(
         sessions.clone(),
-        Duration::from_millis(cli.session_ttl_ms),
-        Duration::from_millis(cli.session_ttl_ms / 2).max(Duration::from_millis(250)),
+        Duration::from_millis(cfg.session_ttl_ms),
+        Duration::from_millis(cfg.session_ttl_ms / 2).max(Duration::from_millis(250)),
     ));
 
     // Debug log each event; the first real consumer of the bus.
@@ -149,8 +156,8 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // HTTP API.
-    let listener = tokio::net::TcpListener::bind(cli.http_bind).await?;
-    tracing::info!(addr = %cli.http_bind, "http api listening");
+    let listener = tokio::net::TcpListener::bind(cfg.http_bind).await?;
+    tracing::info!(addr = %cfg.http_bind, "http api listening");
     tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, api::router(state)).await {
             tracing::error!(error = %e, "http server failed");
