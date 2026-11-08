@@ -14,6 +14,6 @@ fi
 # Publish order matters: dependents go after their dependencies.
 for crate in light-telemetry-client light-telemetry-tracing light-telemetry; do
     echo "== cargo publish -p $crate $DRY =="
-    cargo publish -p "$crate" $DRY --allow-dirty
+    git-cargo-publish -p "$crate" $DRY --allow-dirty
 done
 echo "done"
