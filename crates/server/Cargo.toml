@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 description = "LightTelemetry ingest daemon"
 license.workspace = true
+readme = "README.md"
 repository.workspace = true
 
 [dependencies]
