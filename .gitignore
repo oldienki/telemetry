@@ -1,9 +1,10 @@
-**/target
+target/
 *.iws
 *.user
 cmake-build-*/
-**/__pycache__
+__pycache__/
 *.pyd
+.venv/
 
 # JetBrains IDEA
 .idea/runConfigurations/**.local.xml
