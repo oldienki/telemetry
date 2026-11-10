@@ -70,3 +70,22 @@ publish-python *ARGS:
 # Tag (and optionally push) the Go module — Go versions via git tags.
 publish-go *ARGS:
     bash scripts/publish_go.sh {{ARGS}}
+
+# Docker image name (override: IMAGE=foo/bar just docker-build).
+IMAGE := env_var_or_default("IMAGE", "oldienki/light-telemetry")
+
+# Package version from the workspace manifest.
+VERSION := `grep -m1 '^version' Cargo.toml | cut -d'"' -f2`
+
+# Build the light-telemetry server image locally.
+docker-build *ARGS:
+    docker build -t {{IMAGE}}:latest {{ARGS}} .
+
+# Build and push the image to Docker Hub (tags: latest + package version).
+docker-publish *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just docker-build {{ARGS}}
+    docker tag {{IMAGE}}:latest {{IMAGE}}:{{VERSION}}
+    git-docker-publish {{IMAGE}}:latest
+    git-docker-publish {{IMAGE}}:{{VERSION}}

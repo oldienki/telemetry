@@ -1,0 +1,14 @@
+target/
+.git/
+.idea/
+.github/
+agentic/
+docs/
+python/
+go/
+tests/
+spec/
+project/
+*.md
+Dockerfile
+.dockerignore
