@@ -82,10 +82,19 @@ docker-build *ARGS:
     docker build -t {{IMAGE}}:latest {{ARGS}} .
 
 # Build and push the image to Docker Hub (tags: latest + package version).
-docker-publish *ARGS:
+docker-publish-fn *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
     just docker-build {{ARGS}}
     docker tag {{IMAGE}}:latest {{IMAGE}}:{{VERSION}}
     git-docker-publish {{IMAGE}}:latest
     git-docker-publish {{IMAGE}}:{{VERSION}}
+
+# Publish to GHCR.
+publish-ghcr:
+    IMAGE=ghcr.io/oldienki/light-telemetry just docker-publish-fn
+
+# Publish to Docker Hub.
+publish-docker:
+    IMAGE=docker.io/oldienki/light-telemetry just docker-publish-fn
+

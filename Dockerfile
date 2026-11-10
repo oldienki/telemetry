@@ -10,6 +10,7 @@ RUN cargo build --release --locked -p light-telemetry \
 
 # Minimal runtime image.
 FROM debian:bookworm-slim
+LABEL org.opencontainers.image.source="https://github.com/oldienki/telemetry"
 RUN useradd --system --uid 10001 --home /nonexistent --shell /usr/sbin/nologin light-telemetry
 COPY --from=build /light-telemetry /usr/local/bin/light-telemetry
 USER light-telemetry
