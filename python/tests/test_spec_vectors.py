@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 import jsonschema
 import msgpack
@@ -10,8 +11,9 @@ import pytest
 SPEC = Path(__file__).resolve().parents[2] / "spec"
 
 
-def _load(name: str) -> dict:
-    return json.loads((SPEC / name).read_text())
+def _load(name: str) -> dict[str, Any]:
+    loaded: dict[str, Any] = json.loads((SPEC / name).read_text())
+    return loaded
 
 
 def test_packet_vector_validates_against_schema() -> None:

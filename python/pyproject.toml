@@ -29,6 +29,7 @@ Repository = "https://github.com/oldienki/telemetry"
 dev = [
     "pytest>=8",
     "jsonschema>=4",
+    "types-jsonschema>=4",
     "ruff>=0.7",
     "mypy>=1.11",
 ]
