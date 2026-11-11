@@ -147,6 +147,11 @@ impl TelemetryClient {
                 timeout,
                 Arc::clone(&degraded),
                 Arc::clone(&stop),
+                heartbeat::ProbeSpec {
+                    host_id: config.host_id.clone(),
+                    host_class: config.host_class.clone(),
+                    use_msgpack: config.use_msgpack,
+                },
             )
         });
         Ok(Self {
