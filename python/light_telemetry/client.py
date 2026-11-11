@@ -176,6 +176,7 @@ class TelemetryClient:
         read_timeout = min(max(timeout / 4.0, 0.02), 0.2)
         self._sock.settimeout(read_timeout)
         last_hb: float | None = None
+        last_probe: float | None = None
         while not self._watcher.stop.is_set():
             try:
                 data, addr = self._sock.recvfrom(2048)
@@ -196,5 +197,23 @@ class TelemetryClient:
             )
             if stale:
                 self._degraded.set()
+                # While degraded, send one `_session` keepalive probe per
+                # `timeout` window. The probe refreshes the server session
+                # so heartbeats — and normal emission — can resume.
+                if last_probe is None or (time.monotonic() - last_probe) >= timeout:
+                    probe = {
+                        "topic": "_session",
+                        "id": self._host_id,
+                        "class": self._host_class,
+                        "ts": now_micros(),
+                        "payload": None,
+                    }
+                    try:
+                        data_probe, _ = encode(probe, self._use_msgpack)
+                        self._sock.sendto(data_probe, self._server_addr)
+                    except OSError:
+                        pass  # best-effort: probing never kills the watcher
+                    last_probe = time.monotonic()
             else:
                 self._degraded.clear()
+                last_probe = None

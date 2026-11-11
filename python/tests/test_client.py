@@ -131,6 +131,99 @@ def test_watcher_ignores_non_heartbeat_datagrams() -> None:
         client.stop()
 
 
+def _drive_degraded(
+    server: socket.socket, client: TelemetryClient, timeout_s: float
+) -> None:
+    """One heartbeat, then silence until the client reports degraded."""
+    hb = json.dumps({"type": "hb", "srv_ts": 1}).encode()
+    server.sendto(hb, client.local_addr)
+    deadline = time.monotonic() + timeout_s * 6
+    while not client.degraded:
+        assert time.monotonic() < deadline, "client never degraded"
+        time.sleep(0.02)
+
+
+def test_degraded_watcher_sends_session_probe() -> None:
+    server = _server()
+    client = TelemetryClient(
+        server.getsockname(), "h", "c", heartbeat_timeout=0.15
+    ).start()
+    try:
+        _drive_degraded(server, client, 0.15)
+        data, _ = _recv(server)
+        v = json.loads(data)
+        assert v["topic"] == "_session"
+        assert v["id"] == "h"
+        assert v["class"] == "c"
+        assert v["ts"] > 0
+        assert v["payload"] is None
+    finally:
+        client.stop()
+
+
+def test_probes_are_rate_limited_to_one_per_timeout() -> None:
+    server = _server()
+    client = TelemetryClient(
+        server.getsockname(), "h", "c", heartbeat_timeout=0.15
+    ).start()
+    try:
+        _drive_degraded(server, client, 0.15)
+        # Drain probes emitted while degrading, then count fresh probes:
+        # ~2.5 timeout windows of silence → at most 3 probes.
+        server.settimeout(0.02)
+        try:
+            while True:
+                server.recvfrom(65535)
+        except TimeoutError:
+            pass
+        count = 0
+        server.settimeout(0.08)
+        end = time.monotonic() + 0.38
+        while time.monotonic() < end:
+            try:
+                data, _ = server.recvfrom(65535)
+            except TimeoutError:
+                continue
+            assert json.loads(data)["topic"] == "_session"
+            count += 1
+        assert 1 <= count <= 3, f"expected 1..3 probes, got {count}"
+    finally:
+        client.stop()
+
+
+def test_heartbeat_reply_to_probe_recovers_client() -> None:
+    server = _server()
+    client = TelemetryClient(
+        server.getsockname(), "h", "c", heartbeat_timeout=0.15
+    ).start()
+    try:
+        _drive_degraded(server, client, 0.15)
+        # Server sees a probe and answers with a heartbeat.
+        _, from_addr = _recv(server)
+        hb = json.dumps({"type": "hb", "srv_ts": 2}).encode()
+        server.sendto(hb, from_addr)
+        deadline = time.monotonic() + 1.0
+        while client.degraded:
+            assert time.monotonic() < deadline, "client never recovered"
+            time.sleep(0.02)
+    finally:
+        client.stop()
+
+
+def test_msgpack_probe_decodes() -> None:
+    server = _server()
+    client = TelemetryClient(
+        server.getsockname(), "h", "c", use_msgpack=True, heartbeat_timeout=0.15
+    ).start()
+    try:
+        _drive_degraded(server, client, 0.15)
+        data, _ = _recv(server)
+        assert data[0:1] != b"{"
+        assert msgpack.unpackb(data)["topic"] == "_session"
+    finally:
+        client.stop()
+
+
 def test_context_manager_lifecycle() -> None:
     server = _server()
     with TelemetryClient(
