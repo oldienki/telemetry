@@ -297,6 +297,142 @@ func TestWatcherDegradeAndRecover(t *testing.T) {
 	}
 }
 
+// driveDegraded sends one heartbeat then stays silent until the client
+// reports degraded.
+func driveDegraded(t *testing.T, server *net.UDPConn, c *Client, timeout time.Duration) {
+	t.Helper()
+	hb := []byte(`{"type":"hb","srv_ts":1}`)
+	if _, err := server.WriteToUDP(hb, c.LocalAddr()); err != nil {
+		t.Fatalf("hb: %v", err)
+	}
+	deadline := time.Now().Add(timeout * 6)
+	for !c.Degraded() {
+		if time.Now().After(deadline) {
+			t.Fatal("client never degraded")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func watchedClient(t *testing.T, server *net.UDPConn, useMsgpack bool) *Client {
+	t.Helper()
+	c, err := NewClient(Config{
+		ServerAddr:       server.LocalAddr().String(),
+		HostID:           "h",
+		HostClass:        "c",
+		UseMsgpack:       useMsgpack,
+		HeartbeatTimeout: 150 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	return c
+}
+
+func TestDegradedWatcherSendsSessionProbe(t *testing.T) {
+	server := mustListen(t)
+	c := watchedClient(t, server, false)
+	driveDegraded(t, server, c, 150*time.Millisecond)
+
+	v := recvPacket(t, server)
+	if v["topic"] != "_session" {
+		t.Fatalf("expected _session probe, got %v", v["topic"])
+	}
+	if v["id"] != "h" || v["class"] != "c" {
+		t.Fatalf("probe identity wrong: %v", v)
+	}
+	if ts, ok := v["ts"].(float64); !ok || ts <= 0 {
+		t.Fatalf("probe ts wrong: %v", v["ts"])
+	}
+	if v["payload"] != nil {
+		t.Fatalf("probe payload must be null, got %v", v["payload"])
+	}
+}
+
+func TestProbesAreRateLimitedToOnePerTimeout(t *testing.T) {
+	server := mustListen(t)
+	c := watchedClient(t, server, false)
+	driveDegraded(t, server, c, 150*time.Millisecond)
+
+	// Drain probes emitted while degrading, then count fresh probes over
+	// ~2.5 timeout windows → at most 3.
+	buf := make([]byte, 2048)
+	_ = server.SetReadDeadline(time.Now().Add(20 * time.Millisecond))
+	for {
+		if _, _, err := server.ReadFromUDP(buf); err != nil {
+			break
+		}
+	}
+	count := 0
+	end := time.Now().Add(380 * time.Millisecond)
+	for time.Now().Before(end) {
+		_ = server.SetReadDeadline(time.Now().Add(80 * time.Millisecond))
+		n, _, err := server.ReadFromUDP(buf)
+		if err != nil {
+			continue
+		}
+		var v map[string]any
+		if err := json.Unmarshal(buf[:n], &v); err != nil {
+			t.Fatalf("probe decode: %v", err)
+		}
+		if v["topic"] != "_session" {
+			t.Fatalf("unexpected datagram: %v", v["topic"])
+		}
+		count++
+	}
+	if count < 1 || count > 3 {
+		t.Fatalf("expected 1..3 probes, got %d", count)
+	}
+}
+
+func TestHeartbeatReplyToProbeRecoversClient(t *testing.T) {
+	server := mustListen(t)
+	c := watchedClient(t, server, false)
+	driveDegraded(t, server, c, 150*time.Millisecond)
+
+	// Server sees a probe and answers with a heartbeat.
+	buf := make([]byte, 2048)
+	_ = server.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, from, err := server.ReadFromUDP(buf)
+	if err != nil {
+		t.Fatalf("recv probe: %v", err)
+	}
+	if _, err := server.WriteToUDP([]byte(`{"type":"hb","srv_ts":2}`), from); err != nil {
+		t.Fatalf("hb: %v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for c.Degraded() {
+		if time.Now().After(deadline) {
+			t.Fatal("client never recovered")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestMsgpackProbeDecodes(t *testing.T) {
+	server := mustListen(t)
+	c := watchedClient(t, server, true)
+	driveDegraded(t, server, c, 150*time.Millisecond)
+
+	buf := make([]byte, 2048)
+	_ = server.SetReadDeadline(time.Now().Add(2 * time.Second))
+	n, _, err := server.ReadFromUDP(buf)
+	if err != nil {
+		t.Fatalf("recv probe: %v", err)
+	}
+	if buf[0] == '{' {
+		t.Fatal("probe must be msgpack, not JSON")
+	}
+	var v map[string]any
+	if err := msgpack.Unmarshal(buf[:n], &v); err != nil {
+		t.Fatalf("msgpack decode: %v", err)
+	}
+	if v["topic"] != "_session" {
+		t.Fatalf("expected _session probe, got %v", v["topic"])
+	}
+}
+
 // -- slog handler ---------------------------------------------------------
 
 func mustLogger(t *testing.T, server *net.UDPConn) (*Client, *slog.Logger) {

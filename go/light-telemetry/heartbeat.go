@@ -13,6 +13,10 @@ func isTimeout(err error) bool {
 	return errors.As(err, &nerr) && nerr.Timeout()
 }
 
+// sessionTopic is the reserved wire topic for keepalive probes; the server
+// refreshes the sender session but never publishes it to the event bus.
+const sessionTopic = "_session"
+
 // heartbeat is the server's reverse heartbeat payload: {"type":"hb","srv_ts":…}.
 type heartbeat struct {
 	Type  string `json:"type"`
@@ -32,6 +36,8 @@ func (c *Client) watch() {
 	readTimeout := min(max(timeout/4, 20*time.Millisecond), 200*time.Millisecond)
 	var lastHB time.Time
 	seenHB := false
+	var lastProbe time.Time
+	probed := false
 	buf := make([]byte, 2048)
 	for {
 		select {
@@ -52,6 +58,27 @@ func (c *Client) watch() {
 		}
 		// A client that never saw a heartbeat stays healthy — degradation is
 		// proof of loss, not absence.
-		c.degraded.Store(seenHB && time.Since(lastHB) > timeout)
+		stale := seenHB && time.Since(lastHB) > timeout
+		c.degraded.Store(stale)
+		// While degraded, send one "_session" keepalive probe per timeout
+		// window. The probe refreshes the server session so heartbeats —
+		// and normal emission — can resume on their own.
+		if stale {
+			if !probed || time.Since(lastProbe) >= timeout {
+				if data, _, encErr := encode(Packet{
+					Topic:   sessionTopic,
+					ID:      c.cfg.HostID,
+					Class:   c.cfg.HostClass,
+					TS:      nowMicros(),
+					Payload: nil,
+				}, c.cfg.UseMsgpack); encErr == nil {
+					_, _ = c.conn.Write(data) // best-effort: never exits watch
+				}
+				lastProbe = time.Now()
+				probed = true
+			}
+		} else {
+			probed = false
+		}
 	}
 }
