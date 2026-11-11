@@ -5,7 +5,11 @@
   "type": "object",
   "required": ["topic", "id", "class", "ts"],
   "properties": {
-    "topic": { "type": "string", "minLength": 1 },
+    "topic": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Event topic. The name '_session' is reserved for client keepalive probes; servers refresh the sender session but never publish '_session' events to the event bus."
+    },
     "id": { "type": "string", "minLength": 1 },
     "class": { "type": "string", "minLength": 1 },
     "ts": { "type": "integer", "minimum": 0 },

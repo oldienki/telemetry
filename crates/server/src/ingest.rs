@@ -20,6 +20,10 @@ use tracing::{debug, warn};
 /// Default bounded decode-channel capacity.
 pub const INGEST_CHANNEL_CAPACITY: usize = 10_000;
 
+/// Reserved topic for client keepalive probes. Probe datagrams refresh the
+/// sender session like any packet but are never published to the event bus.
+pub const SESSION_TOPIC: &str = "_session";
+
 /// One raw datagram as received from the socket pool.
 #[derive(Debug)]
 pub struct RawDatagram {
@@ -89,7 +93,9 @@ pub async fn spawn(
             decode_task_sessions.touch(d.from);
             match decode::decode(&d.bytes, now_micros()) {
                 Ok(ev) => {
-                    let _ = bus.publish(ev);
+                    if ev.topic != SESSION_TOPIC {
+                        let _ = bus.publish(ev);
+                    }
                 }
                 Err(e) => {
                     metrics::inc_decode_error();
@@ -264,6 +270,104 @@ mod tests {
         assert_eq!(msg["type"], "hb");
         assert!(msg["srv_ts"].as_u64().unwrap() > 0);
         task.abort();
+    }
+
+    #[tokio::test]
+    async fn session_probe_touches_session_without_bus_publish() {
+        let bus = EventBus::new();
+        let mut rx = bus.subscribe();
+        let sessions = Arc::new(SessionRegistry::new());
+        let ing = spawn(
+            "127.0.0.1:0".parse().unwrap(),
+            1,
+            Arc::clone(&sessions),
+            bus,
+        )
+        .await
+        .unwrap();
+
+        let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let client_addr = client.local_addr().unwrap();
+        client
+            .send_to(
+                br#"{"topic":"_session","id":"i","class":"c","ts":1}"#,
+                ing.local_addr,
+            )
+            .await
+            .unwrap();
+
+        // Session is refreshed by the probe...
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(sessions.len(), 1);
+        assert!(sessions.active_addrs().contains(&client_addr));
+
+        // ...but the _session event never reaches the bus. A follow-up
+        // normal event proves the pipeline is alive and the probe was
+        // filtered, not just delayed.
+        client
+            .send_to(
+                br#"{"topic":"real","id":"i","class":"c","ts":2}"#,
+                ing.local_addr,
+            )
+            .await
+            .unwrap();
+        let ev = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("normal event within timeout")
+            .unwrap();
+        assert_eq!(ev.topic, "real");
+
+        for t in ing.tasks {
+            t.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn session_probe_msgpack_is_also_filtered() {
+        // Edge: probes may arrive in MessagePack; filtering happens after
+        // decode, so the wire format must not matter.
+        let bus = EventBus::new();
+        let mut rx = bus.subscribe();
+        let sessions = Arc::new(SessionRegistry::new());
+        let ing = spawn(
+            "127.0.0.1:0".parse().unwrap(),
+            1,
+            Arc::clone(&sessions),
+            bus,
+        )
+        .await
+        .unwrap();
+
+        #[derive(serde::Serialize)]
+        struct Probe {
+            topic: &'static str,
+            id: &'static str,
+            class: &'static str,
+            ts: u64,
+        }
+        let bytes = rmp_serde::to_vec(&Probe {
+            topic: "_session",
+            id: "i",
+            class: "c",
+            ts: 1,
+        })
+        .unwrap();
+
+        let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client.send_to(&bytes, ing.local_addr).await.unwrap();
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(sessions.len(), 1);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(300), rx.recv())
+                .await
+                .is_err(),
+            "_session event leaked to the bus"
+        );
+
+        for t in ing.tasks {
+            t.abort();
+        }
     }
 
     #[test]
