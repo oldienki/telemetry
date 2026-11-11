@@ -5,7 +5,7 @@ from .client import ClientStats, TelemetryClient
 from .handler import TelemetryLogHandler
 from .serialize import MTU_SAFE, encode, now_micros
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 __all__ = [
     "MTU_SAFE",

@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/server", "crates/client", "crates/tracing-subscriber"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "LightTelemetry: UDP fire-and-forget telemetry for test environments"
 license = "MIT OR Apache-2.0"
